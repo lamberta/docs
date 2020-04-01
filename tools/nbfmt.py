@@ -72,12 +72,34 @@ def warn(msg: str) -> None:
   print(f" \033[33m {msg}\033[00m", file=sys.stderr)
 
 
+def remove_extra_fields(data) -> None:
+  """Deletes extra notebook fields.
+
+  Jupyter format spec:
+  https://nbformat.readthedocs.io/en/latest/format_description.html
+
+  Args:
+    data: object representing a parsed JSON notebook.
+  """
+  def filter_keys(data, keep_list):
+    to_delete = set(data.keys()).difference(keep_list)
+    for key in to_delete:
+      del data[key]
+
+  # These top-level fields are required:
+  filter_keys(data, ["cells", "metadata", "nbformat_minor", "nbformat"])
+  # All metadata is optional according to spec, but we use some of it:
+  filter_keys(data["metadata"], ["accelerator", "colab", "kernelspec"])
+
+
 def clean_cells(data) -> None:
   """Remove empty cells and strip outputs from `data` object.
 
   Args:
     data: object representing a parsed JSON notebook.
   """
+  remove_extra_fields(data)
+
   # Clear leading and trailing newlines.
   for cell in data["cells"]:
     source = cell["source"]
@@ -100,11 +122,9 @@ def clean_cells(data) -> None:
     if cell["cell_type"] != "code":
       continue
 
-    # Always remove the metadata "executionInfo" block, this is what adds the
-    # little user photos in colab.
+    # Clean cell metadata: remove the "executionInfo" block, this is what adds
+    # the little user photos in Colab.
     cell_meta = cell.get("metadata", {})
-    # If this becomes a recurring problem use a whitelist based on:
-    # https://nbformat.readthedocs.io/en/latest/format_description.html#metadata
     cell_meta.pop("executionInfo", None)
     cell["metadata"] = cell_meta
 
@@ -126,6 +146,10 @@ def update_metadata(data: Dict[str, Any],
     data: object representing a parsed JSON notebook.
     filepath: String of notebook filepath passed to the command-line.
   """
+  # Set top-level notebook defaults.
+  data["nbformat"] = 4
+  data["nbformat_minor"] = 0
+
   metadata = data.get("metadata", {})
   colab = metadata.get("colab", {})
   # Set preferred metadata for notebook docs.
